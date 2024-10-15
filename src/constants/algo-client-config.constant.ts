@@ -52,7 +52,7 @@ export const ALGO_CLIENT_CONFIG: ClientConfigRecord = {
         algod: {
             token: '',
             server: 'https://mainnet-api.algonode.cloud',
-            port: '4002',
+            port: '',
             network: 'mainnet',
         },
         indexer: {
