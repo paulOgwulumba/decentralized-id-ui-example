@@ -1,6 +1,6 @@
 'use client';
 
-import { useWallet } from '@txnlab/use-wallet-react';
+import { useWallet } from '@txnlab/use-wallet';
 import { BackgroundOverlay } from '../background-overlay';
 import { useEffect } from 'react';
 import styles from './index.module.scss';
@@ -10,7 +10,7 @@ interface Props {
 }
 
 export const WalletConnectModal = ({ onClose }: Props) => {
-  const { wallets, activeAddress } = useWallet();
+  const { providers: wallets, activeAddress } = useWallet();
 
   useEffect(() => {
     if (activeAddress) {
@@ -26,8 +26,8 @@ export const WalletConnectModal = ({ onClose }: Props) => {
           <h5>Supported wallets</h5>
         </div>
         <div className={styles.wallets}>
-          {wallets.map((wallet) => (
-            <div className={styles.wallet} key={wallet.id} onClick={wallet.connect}>
+          {wallets?.map((wallet) => (
+            <div className={styles.wallet} key={wallet.metadata.id} onClick={wallet.connect}>
               <img src={wallet.metadata.icon} alt={`${wallet.metadata.name} icon`} />
               <span>{wallet.metadata.name}</span>
             </div>

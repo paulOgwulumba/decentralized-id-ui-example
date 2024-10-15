@@ -1,7 +1,7 @@
 'use client';
 
 import { AlgorandIcon } from '@/assets';
-import { useWallet } from '@txnlab/use-wallet-react';
+import { useWallet } from '@txnlab/use-wallet';
 import styles from './index.module.scss';
 import { TopNav } from '@/components/top-nav';
 import { useAlgoDidActions } from '@/actions/algo-did';

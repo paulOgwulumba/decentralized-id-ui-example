@@ -1,22 +1,20 @@
 'use client';
 
-import { useWallet } from '@txnlab/use-wallet-react';
+import { useWallet } from '@txnlab/use-wallet';
 import { AlgoDidClient } from '@/artifacts/algo-did-client';
 import { useCallback } from 'react';
-import { SendTransactionFrom } from '@algorandfoundation/algokit-utils/types/transaction';
+import { getAlgodClient } from '@/utils/get-algo-client-config';
 
 export const useAlgoDidActions = () => {
-  const { activeAddress, transactionSigner, algodClient, activeNetwork } = useWallet();
+  const { activeAddress, signer } = useWallet();
 
   const deploySmartContract = useCallback(async () => {
-    if (!activeAddress || !transactionSigner || !algodClient) {
+    if (!activeAddress || !signer) {
       throw new Error('No wallet connected');
     }
 
-    console.log(activeNetwork);
-    console.log(algodClient);
-
-    const sender = { signer: transactionSigner, addr: activeAddress };
+    const sender = { signer, addr: activeAddress };
+    const algodClient = getAlgodClient();
 
     const appClient = new AlgoDidClient(
       {
@@ -32,7 +30,7 @@ export const useAlgoDidActions = () => {
     console.log('Smart contract deployed with ID:', response);
 
     return response;
-  }, [activeAddress, transactionSigner]);
+  }, [activeAddress, signer]);
 
   return { deploySmartContract };
 };

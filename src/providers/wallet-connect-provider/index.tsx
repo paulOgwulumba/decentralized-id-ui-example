@@ -1,35 +1,35 @@
 'use client';
 
-import { WalletProvider } from '@txnlab/use-wallet-react';
-import { NetworkId, WalletId, WalletManager } from '@txnlab/use-wallet';
+import { WalletProvider, useInitializeProviders } from '@txnlab/use-wallet'
 import { useRecoilState } from 'recoil';
+import algosdk from 'algosdk';
 import { ConnectWalletVisibleAtom } from '@/state';
 import { WalletConnectModal } from '@/components/wallet-connect-modal';
+import { getAlgoClientConfig, getWalletProviders } from '@/utils/get-algo-client-config';
 
 interface Props {
-  children: React.ReactNode;
+  children: React.ReactNode;    
 }
 
 export const WalletConnectProvider = ({ children }: Props) => {
   const [connectWalletVisible, setConnectWalletVisible] = useRecoilState(ConnectWalletVisibleAtom);
-  const walletManager = new WalletManager({
-    wallets: [WalletId.DEFLY, WalletId.PERA, WalletId.EXODUS, WalletId.KIBISIS],
-    network: NetworkId.TESTNET,
-    // process.env.NEXT_PUBLIC_ENVIRONMENT === 'production'
-    //   ? NetworkId.MAINNET
-    //   : process.env.NEXT_PUBLIC_ENVIRONMENT === 'local'
-    //   ? NetworkId.LOCALNET
-    //   : NetworkId.TESTNET,
-    algod: {
-      [NetworkId.TESTNET]: {
-        baseServer: 'https://testnet-api.algonode.cloud',
-        // baseServer: 'https://algonodetestnet.aurally.xyz',
-      },
+  const { config, environment } = getAlgoClientConfig();
+  const providers = getWalletProviders(environment, config);
+  const algodConfig = config.algod;
+
+  const walletProviders = useInitializeProviders({
+    providers,
+    nodeConfig: {
+      network: algodConfig.network,
+      nodeServer: algodConfig.server,
+      nodePort: String(algodConfig.port),
+      nodeToken: String(algodConfig.token),
     },
-  });
+    algosdkStatic: algosdk,
+  })
 
   return (
-    <WalletProvider manager={walletManager}>
+    <WalletProvider value={walletProviders}>
       {connectWalletVisible && (
         <WalletConnectModal onClose={() => setConnectWalletVisible(false)} />
       )}
