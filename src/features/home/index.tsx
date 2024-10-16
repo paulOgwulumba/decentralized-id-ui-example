@@ -7,10 +7,12 @@ import { TopNav } from '@/components/top-nav';
 import { useAlgoDidActions } from '@/actions/algo-did';
 import { useState } from 'react';
 import toast from 'react-hot-toast';
+import { CreateDidModal } from './modals/create-did.modal';
 
 export const Home = () => {
   const [loading, setLoading] = useState(false);
   const { deploySmartContract } = useAlgoDidActions();
+  const [modal, setModal] = useState<'create-did'>();
   const { activeAddress } = useWallet();
 
   const handleDeploySmartContract = async () => {
@@ -48,8 +50,8 @@ export const Home = () => {
             </li>
           </ul>
 
-          <div className={styles['button-group']}>
-            {!!activeAddress && (
+          {!!activeAddress && (
+            <div className={styles['button-group']}>
               <button
                 onClick={handleDeploySmartContract}
                 disabled={loading}
@@ -57,10 +59,20 @@ export const Home = () => {
               >
                 Deploy smart contract
               </button>
-            )}
-          </div>
+
+              <button
+                onClick={() => setModal('create-did')}
+                disabled={loading}
+                className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
+              >
+                Create DiD
+              </button>
+            </div>
+          )}
         </main>
       </div>
+
+      {modal === 'create-did' && <CreateDidModal onClose={() => setModal(undefined)} />}
     </>
   );
 };

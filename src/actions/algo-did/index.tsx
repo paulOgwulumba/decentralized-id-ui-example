@@ -2,11 +2,16 @@
 
 import { useWallet } from '@txnlab/use-wallet';
 import { AlgoDidClient } from '@/artifacts/algo-did-client';
+import algosdk from 'algosdk';
 import { useCallback } from 'react';
-import { getAlgodClient } from '@/utils/get-algo-client-config';
+import { getAlgoClientConfig, getAlgodClient } from '@/utils/get-algo-client-config';
+import { CreateDiDDocumentDto, DidDocument, UploadDiDDocumentDto } from '@/interface/did.interface';
+import { calculateTotalCostOfUploadingDidDocument } from '@/utils/algo-did-utils';
 
 export const useAlgoDidActions = () => {
   const { activeAddress, signer } = useWallet();
+  const { config } = getAlgoClientConfig();
+  const algodClient = getAlgodClient();
 
   const deploySmartContract = useCallback(async () => {
     if (!activeAddress || !signer) {
@@ -14,7 +19,6 @@ export const useAlgoDidActions = () => {
     }
 
     const sender = { signer, addr: activeAddress };
-    const algodClient = getAlgodClient();
 
     const appClient = new AlgoDidClient(
       {
@@ -26,11 +30,109 @@ export const useAlgoDidActions = () => {
     );
 
     const response = await appClient.create.createApplication({}, {});
-    console.log(response);
-    console.log('Smart contract deployed with ID:', response);
 
     return response;
   }, [activeAddress, signer]);
 
-  return { deploySmartContract };
+  const createDidDocument = useCallback(
+    async ({ appId }: CreateDiDDocumentDto) => {
+      if (!activeAddress || !signer) {
+        throw new Error('No wallet connected');
+      }
+
+      // Get wallet address public key
+      const publicKey = algosdk.decodeAddress(activeAddress).publicKey;
+      const publicKeyHex = Buffer.from(publicKey).toString('hex');
+
+      // Generate the base identifier (DID)
+      const subject = `${config.algod.network}:app:${appId}:${publicKeyHex}`;
+      const did = `did:algo:${subject}`;
+
+      const didDocument: DidDocument = {
+        '@context': [
+          'https://www.w3.org/ns/did/v1',
+          'https://w3id.org/security/suites/ed25519-2020/v1',
+          'https://w3id.org/security/suites/x25519-2020/v1',
+        ],
+        id: did,
+        verificationMethod: [
+          {
+            id: `${did}#master`,
+            type: 'Ed25519VerificationKey2020',
+            controller: did,
+          },
+        ],
+        authentication: [`${did}#master`],
+
+        // Add custom metadata like the username or email
+        service: [
+          {
+            id: `${did}#username`,
+            type: 'UserProfile',
+            serviceEndpoint: { username: 'alice' },
+          },
+          {
+            id: `${did}#email`,
+            type: 'UserEmail',
+            serviceEndpoint: { email: 'alice@gmail.org' },
+          },
+        ],
+      };
+
+      return didDocument;
+    },
+    [activeAddress, signer],
+  );
+
+  const uploadDidDocument = useCallback(
+    async ({ document, appId }: UploadDiDDocumentDto) => {
+      if (!activeAddress || !signer) {
+        throw new Error('No wallet connected');
+      }
+
+      const documentBuffer = Buffer.from(JSON.stringify(document));
+      const sender = { signer, addr: activeAddress };
+
+      const appClient = new AlgoDidClient(
+        {
+          resolveBy: 'id',
+          id: Number(appId),
+          sender,
+        },
+        algodClient,
+      );
+
+      const { totalCost, numberOfBoxes, endBoxSize } =
+        calculateTotalCostOfUploadingDidDocument(documentBuffer);
+      const appAddress = (await appClient.appClient.getAppReference()).appAddress;
+      const publicKey = algosdk.decodeAddress(activeAddress).publicKey;
+
+      const mbrPayment = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+        from: sender.addr,
+        to: appAddress,
+        amount: totalCost,
+        suggestedParams: await algodClient.getTransactionParams().do(),
+      });
+
+      const response = await appClient.startUpload(
+        {
+          pubKey: appAddress,
+          numBoxes: numberOfBoxes,
+          endBoxSize: endBoxSize,
+          mbrPayment,
+        },
+        {
+          sendParams: {
+            suppressLog: true,
+          },
+          boxes: [appAddress],
+        },
+      );
+
+      return response;
+    },
+    [activeAddress, signer],
+  );
+
+  return { deploySmartContract, createDidDocument, uploadDidDocument };
 };
