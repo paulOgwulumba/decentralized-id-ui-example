@@ -84,7 +84,7 @@ export const useAlgoDidActions = () => {
     [activeAddress, signer],
   );
 
-  const uploadDidDocument = useCallback(
+  const startDidDocumentUpload = useCallback(
     async ({ document, appId }: UploadDiDDocumentDto) => {
       if (!activeAddress || !signer) {
         throw new Error('No wallet connected');
@@ -116,7 +116,7 @@ export const useAlgoDidActions = () => {
 
       const response = await appClient.startUpload(
         {
-          pubKey: appAddress,
+          pubKey: activeAddress,
           numBoxes: numberOfBoxes,
           endBoxSize: endBoxSize,
           mbrPayment,
@@ -125,7 +125,12 @@ export const useAlgoDidActions = () => {
           sendParams: {
             suppressLog: true,
           },
-          boxes: [appAddress],
+          boxes: [
+            {
+              appIndex: Number(appId),
+              name: publicKey,
+            },
+          ],
         },
       );
 
@@ -134,5 +139,47 @@ export const useAlgoDidActions = () => {
     [activeAddress, signer],
   );
 
-  return { deploySmartContract, createDidDocument, uploadDidDocument };
+  const uploadDidDocument = useCallback(
+    async ({ document, appId }: UploadDiDDocumentDto) => {
+      if (!activeAddress || !signer) {
+        throw new Error('No wallet connected');
+      }
+
+      const documentBuffer = Buffer.from(JSON.stringify(document));
+      const sender = { signer, addr: activeAddress };
+      const publicKey = algosdk.decodeAddress(activeAddress).publicKey;
+
+      const appClient = new AlgoDidClient(
+        {
+          resolveBy: 'id',
+          id: Number(appId),
+          sender,
+        },
+        algodClient,
+      );
+
+      const boxIndices = (await appClient.appClient.getBoxValueFromABIType(
+        activeAddress,
+        algosdk.ABIType.from('(uint64, uint64, uint8, uint64)'),
+      )) as number[];
+
+      const metadata = {
+        start: boxIndices[0],
+        end: boxIndices[1],
+        status: boxIndices[2],
+        endSize: boxIndices[3],
+      };
+
+      console.log(metadata);
+      console.log(boxIndices);
+    },
+    [activeAddress, signer],
+  );
+
+  return {
+    deploySmartContract,
+    createDidDocument,
+    startDidDocumentUpload,
+    uploadDidDocument,
+  };
 };
