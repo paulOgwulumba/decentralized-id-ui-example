@@ -12,6 +12,7 @@ export const calculateTotalCostOfUploadingDidDocument = (documentBuffer: Buffer)
   const endBoxSize = documentBuffer.byteLength % MAX_BOX_SIZE;
 
   const totalCost =
+    100_000 +
     ceilBoxes * COST_PER_BOX + // cost of data boxes
     (ceilBoxes - 1) * MAX_BOX_SIZE * COST_PER_BYTE + // cost of data
     ceilBoxes * 8 * COST_PER_BYTE + // cost of data keys

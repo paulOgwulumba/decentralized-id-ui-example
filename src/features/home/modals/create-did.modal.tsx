@@ -12,13 +12,19 @@ interface Props {
 
 export const CreateDidModal = ({ onClose }: Props) => {
   const [appId, setAppId] = useState('');
-  const { createDidDocument, startDidDocumentUpload } = useAlgoDidActions();
+  const {
+    deploySmartContract,
+    createDidDocument,
+    startDidDocumentUpload,
+    getDidMetaData,
+    uploadDidDocument,
+  } = useAlgoDidActions();
 
   const onCreateDoc = async () => {
     try {
       const doc = await createDidDocument({ appId });
       toast.loading('Uploading document...');
-      const res = await startDidDocumentUpload({ document: doc, appId });
+      const res = await uploadDidDocument({ document: doc, appId });
       console.log(res);
       toast.dismiss();
     } catch (error) {
