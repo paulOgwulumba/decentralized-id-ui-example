@@ -5,6 +5,7 @@ import { AlgoDidClient } from '@/artifacts/algo-did-client';
 import algosdk from 'algosdk';
 import { useCallback } from 'react';
 import { getAlgoClientConfig, getAlgodClient } from '@/utils/get-algo-client-config';
+import * as algokit from '@algorandfoundation/algokit-utils';
 import {
   CreateDiDDocumentDto,
   DidDocument,
@@ -13,8 +14,12 @@ import {
   UploadDiDDocumentDto,
   UploadDidBoxDto,
 } from '@/interface/did.interface';
-import { calculateTotalCostOfUploadingDidDocument } from '@/utils/algo-did-utils';
+import {
+  calculateTotalCostOfUploadingDidDocument,
+  resolveDidIntoComponents,
+} from '@/utils/algo-did-utils';
 import { BYTES_PER_CALL, MAX_BOX_SIZE } from '@/constants/algo-did.constant';
+import { AlgoDIDStatus } from '@/enums/algo-did.enum';
 
 export const useAlgoDidActions = () => {
   const { activeAddress, signer } = useWallet();
@@ -153,9 +158,7 @@ export const useAlgoDidActions = () => {
         throw new Error('No wallet connected');
       }
 
-      const documentBuffer = Buffer.from(JSON.stringify(document));
       const sender = { signer, addr: activeAddress };
-      const publicKey = algosdk.decodeAddress(activeAddress).publicKey;
 
       const appClient = new AlgoDidClient(
         {
@@ -165,6 +168,26 @@ export const useAlgoDidActions = () => {
         },
         algodClient,
       );
+
+      const appAddress = (await appClient.appClient.getAppReference()).appAddress;
+
+      const mbrPayment = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+        from: sender.addr,
+        to: appAddress,
+        amount: 100_000,
+        suggestedParams: await algodClient.getTransactionParams().do(),
+      });
+
+      await algokit.sendTransaction(
+        {
+          transaction: mbrPayment,
+          from: sender,
+        },
+        algodClient,
+      );
+
+      const documentBuffer = Buffer.from(JSON.stringify(document));
+      const publicKey = algosdk.decodeAddress(activeAddress).publicKey;
 
       const boxIndices = (await appClient.appClient.getBoxValueFromABIType(
         publicKey,
@@ -284,37 +307,40 @@ export const useAlgoDidActions = () => {
     return atc.execute(algodClient, 3);
   }, []);
 
-  const getDidMetaData = useCallback(async (appId: string) => {
-    if (!activeAddress || !signer) {
-      throw new Error('No wallet connected');
-    }
+  const getDidMetaData = useCallback(
+    async (appId: string, address?: string) => {
+      if (!activeAddress || !signer) {
+        throw new Error('No wallet connected');
+      }
 
-    const sender = { signer, addr: activeAddress };
-    const publicKey = algosdk.decodeAddress(activeAddress).publicKey;
+      const sender = { signer, addr: activeAddress };
+      const publicKey = algosdk.decodeAddress(address || activeAddress).publicKey;
 
-    const appClient = new AlgoDidClient(
-      {
-        resolveBy: 'id',
-        id: Number(appId),
-        sender,
-      },
-      algodClient,
-    );
+      const appClient = new AlgoDidClient(
+        {
+          resolveBy: 'id',
+          id: Number(appId),
+          sender,
+        },
+        algodClient,
+      );
 
-    const boxIndices = (await appClient.appClient.getBoxValueFromABIType(
-      publicKey,
-      algosdk.ABIType.from('(uint64,uint64,uint8,uint64,uint64)'),
-    )) as BigInt[];
+      const boxIndices = (await appClient.appClient.getBoxValueFromABIType(
+        publicKey,
+        algosdk.ABIType.from('(uint64,uint64,uint8,uint64,uint64)'),
+      )) as BigInt[];
 
-    const metadata: DidMetadata = {
-      start: boxIndices[0],
-      end: boxIndices[1],
-      status: boxIndices[2],
-      endSize: boxIndices[3],
-    };
+      const metadata: DidMetadata = {
+        start: boxIndices[0],
+        end: boxIndices[1],
+        status: boxIndices[2],
+        endSize: boxIndices[3],
+      };
 
-    return metadata;
-  }, []);
+      return metadata;
+    },
+    [activeAddress, signer],
+  );
 
   const finishDidDocumentUpload = useCallback(
     async (appId: string) => {
@@ -357,6 +383,191 @@ export const useAlgoDidActions = () => {
     [activeAddress, signer],
   );
 
+  const prepareForDocumentDelete = useCallback(
+    async (appId: string) => {
+      if (!activeAddress || !signer) {
+        throw new Error('No wallet connected');
+      }
+
+      const sender = { signer, addr: activeAddress };
+
+      const appClient = new AlgoDidClient(
+        {
+          resolveBy: 'id',
+          id: Number(appId),
+          sender,
+        },
+        algodClient,
+      );
+
+      const publicKey = algosdk.decodeAddress(activeAddress).publicKey;
+
+      const response = await appClient.startDelete(
+        {
+          pubKey: activeAddress,
+        },
+        {
+          sendParams: {
+            suppressLog: true,
+          },
+          boxes: [
+            {
+              appIndex: Number(appId),
+              name: publicKey,
+            },
+          ],
+        },
+      );
+
+      return response;
+    },
+    [activeAddress, signer],
+  );
+
+  const deleteDocument = useCallback(
+    async (appId: string) => {
+      if (!activeAddress || !signer) {
+        throw new Error('No wallet connected');
+      }
+
+      const sender = { signer, addr: activeAddress };
+
+      const appClient = new AlgoDidClient(
+        {
+          resolveBy: 'id',
+          id: Number(appId),
+          sender,
+        },
+        algodClient,
+      );
+
+      const publicKey = algosdk.decodeAddress(activeAddress).publicKey;
+      const metadata = await getDidMetaData(appId);
+
+      const suggestedParams = await algodClient.getTransactionParams().do();
+      const atomicTxnComposers: algosdk.AtomicTransactionComposer[] = [];
+
+      for (let boxIndex = Number(metadata.start); boxIndex <= Number(metadata.end); boxIndex++) {
+        const atomicTxnComposer = new algosdk.AtomicTransactionComposer();
+        const boxIndexRef = {
+          appIndex: Number(appId),
+          name: algosdk.encodeUint64(boxIndex),
+        };
+
+        atomicTxnComposer.addMethodCall({
+          appID: Number(appId),
+          method: appClient.appClient.getABIMethod('deleteData')!,
+          methodArgs: [publicKey, BigInt(boxIndex)],
+          boxes: [
+            { appIndex: Number(appId), name: publicKey },
+            ...Array.from({ length: 7 }).map(() => boxIndexRef),
+          ],
+          suggestedParams: { ...suggestedParams, fee: 2_000, flatFee: true },
+          sender: sender.addr,
+          signer: sender.signer,
+        });
+
+        Array.from({ length: 4 }).forEach((i) => {
+          atomicTxnComposer.addMethodCall({
+            appID: Number(appId),
+            method: appClient.appClient.getABIMethod('dummy')!,
+            methodArgs: [],
+            boxes: Array.from({ length: 8 }).map(() => boxIndexRef),
+            suggestedParams,
+            sender: sender.addr,
+            signer: sender.signer,
+            note: new Uint8Array(Buffer.from(`dummy ${Math.random() * 100000}`)),
+          });
+        });
+
+        atomicTxnComposers.push(atomicTxnComposer);
+      }
+
+      const txIds: string[] = [];
+      for await (const atomicTxnComposer of atomicTxnComposers) {
+        const res = await atomicTxnComposer.execute(algodClient, 3);
+        txIds.push(...res.txIDs);
+      }
+
+      return { txIds };
+    },
+    [activeAddress, signer],
+  );
+
+  const resolveDidByAppId = useCallback(
+    async (appId: string, address?: string) => {
+      if (!activeAddress || !signer) {
+        throw new Error('No wallet connected');
+      }
+
+      const sender = { signer, addr: activeAddress };
+
+      const appClient = new AlgoDidClient(
+        {
+          resolveBy: 'id',
+          id: Number(appId),
+          sender,
+        },
+        algodClient,
+      );
+
+      const res = await algokit.getAppById(Number(appId), algodClient);
+      const metadata = await getDidMetaData(appId, address || res.params.creator);
+
+      if (metadata.status === AlgoDIDStatus.DELETING) {
+        throw new Error('DID Document is still being deleted');
+      }
+
+      if (metadata.status === AlgoDIDStatus.UPLOADING) {
+        throw new Error('DID Document is still being uploaded');
+      }
+
+      const boxValues: Uint8Array[] = [];
+
+      for (let boxIndex = Number(metadata.start); boxIndex <= Number(metadata.end); boxIndex++) {
+        const boxValue = await appClient.appClient.getBoxValue(
+          algosdk.encodeUint64(BigInt(boxIndex)),
+        );
+        boxValues.push(boxValue);
+      }
+
+      const documentBuffer = Buffer.concat(boxValues);
+
+      try {
+        return JSON.parse(documentBuffer.toString('utf-8')) as DidDocument;
+      } catch (error) {
+        throw new Error(`Invalid DID Document content: ${documentBuffer.toString('utf-8')}`);
+      }
+    },
+    [activeAddress, signer],
+  );
+
+  const resolveDid = useCallback(
+    async (did: string) => {
+      const { network, appId, publicKey: publicKeyHex } = resolveDidIntoComponents(did);
+
+      const buffer = Buffer.from(publicKeyHex, 'hex');
+      const publicKey = new Uint8Array(buffer);
+      const address = algosdk.encodeAddress(publicKey);
+
+      if (config.algod.network !== network) {
+        throw new Error(`Invalid network. Expected ${config.algod.network}, got ${network}`);
+      }
+
+      const res = await algokit.getAppById(Number(appId), algodClient);
+
+      if (address !== res.params.creator) {
+        const creatorKey = algosdk.decodeAddress(res.params.creator).publicKey;
+        const creatorKeyHex = Buffer.from(creatorKey).toString('hex');
+
+        throw new Error(`Invalid public key. Expected ${creatorKeyHex}, got ${publicKeyHex}`);
+      }
+
+      return resolveDidByAppId(String(appId), address);
+    },
+    [activeAddress, signer],
+  );
+
   return {
     deploySmartContract,
     createDidDocument,
@@ -364,5 +575,9 @@ export const useAlgoDidActions = () => {
     uploadDidDocument,
     getDidMetaData,
     finishDidDocumentUpload,
+    prepareForDocumentDelete,
+    deleteDocument,
+    resolveDidByAppId,
+    resolveDid,
   };
 };

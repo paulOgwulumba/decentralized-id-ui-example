@@ -12,7 +12,7 @@ export const ALGO_CLIENT_CONFIG: ClientConfigRecord = {
         algod: {
             token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
             server: 'http://localhost',
-            port: '4002',
+            port: '4001',
             network: 'localnet',
         },
         indexer: {
