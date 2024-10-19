@@ -10,11 +10,14 @@ import toast from 'react-hot-toast';
 import { CreateDidModal } from './modals/create-did.modal';
 import { DeleteDidModal } from './modals/delete-did.modal';
 import { ResolveDidModal } from './modals/resolve-did-modal';
+import { VerifyOwnershipModal } from './modals/verify-ownership.modal';
 
 export const Home = () => {
   const [loading, setLoading] = useState(false);
   const { deploySmartContract } = useAlgoDidActions();
-  const [modal, setModal] = useState<'create-did' | 'delete-did' | 'resolve-did'>();
+  const [modal, setModal] = useState<
+    'create-did' | 'delete-did' | 'resolve-did' | 'verify-ownership'
+  >();
   const { activeAddress } = useWallet();
 
   const handleDeploySmartContract = async () => {
@@ -25,7 +28,6 @@ export const Home = () => {
 
     try {
       const response = await deploySmartContract();
-      console.log(response);
 
       toast.success(`Smart contract deployed successfully! APP ID: ${response.appId}`);
       setLoading(false);
@@ -91,12 +93,25 @@ export const Home = () => {
               </button>
             </div>
           )}
+
+          {!!activeAddress && (
+            <div className={styles['button-group']}>
+              <button
+                onClick={() => setModal('verify-ownership')}
+                disabled={loading}
+                className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
+              >
+                Verify ownership
+              </button>
+            </div>
+          )}
         </main>
       </div>
 
       {modal === 'create-did' && <CreateDidModal onClose={() => setModal(undefined)} />}
       {modal === 'delete-did' && <DeleteDidModal onClose={() => setModal(undefined)} />}
       {modal === 'resolve-did' && <ResolveDidModal onClose={() => setModal(undefined)} />}
+      {modal === 'verify-ownership' && <VerifyOwnershipModal onClose={() => setModal(undefined)} />}
     </>
   );
 };

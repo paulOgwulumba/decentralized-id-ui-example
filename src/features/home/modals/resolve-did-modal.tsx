@@ -15,14 +15,15 @@ export const ResolveDidModal = ({ onClose }: Props) => {
   const [appId, setAppId] = useState('');
   const [did, setDid] = useState('');
   const [didDoc, setDidDoc] = useState<DidDocument>();
-  const { resolveDid, resolveDidByAppId } = useAlgoDidActions();
+  const { resolveDid, resolveDidByAppId, resolveDidUsingExternalApi } = useAlgoDidActions();
 
   const resolveDoc = async (type: 'did' | 'app-id') => {
     setDidDoc(undefined);
 
     try {
       toast.loading('Resolving DID...', { id: 'loader' });
-      const doc = type === 'app-id' ? await resolveDidByAppId(appId) : await resolveDid(did);
+      const doc =
+        type === 'app-id' ? await resolveDidByAppId(appId) : await resolveDidUsingExternalApi(did);
       toast.dismiss('loader');
       toast.success('DID resolved successfully!');
       setDidDoc(doc);

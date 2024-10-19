@@ -2,6 +2,7 @@
 
 import { useWallet } from '@txnlab/use-wallet';
 import { AlgoDidClient } from '@/artifacts/algo-did-client';
+import * as nobleEd25519 from '@noble/ed25519';
 import algosdk from 'algosdk';
 import { useCallback } from 'react';
 import { getAlgoClientConfig, getAlgodClient } from '@/utils/get-algo-client-config';
@@ -20,10 +21,12 @@ import {
 } from '@/utils/algo-did-utils';
 import { BYTES_PER_CALL, MAX_BOX_SIZE } from '@/constants/algo-did.constant';
 import { AlgoDIDStatus } from '@/enums/algo-did.enum';
+import { useClient } from '@/hooks/use-client';
 
 export const useAlgoDidActions = () => {
-  const { activeAddress, signer } = useWallet();
+  const { activeAddress, signer, signTransactions } = useWallet();
   const { config } = getAlgoClientConfig();
+  const client = useClient();
   const algodClient = getAlgodClient();
 
   const deploySmartContract = useCallback(async () => {
@@ -78,18 +81,18 @@ export const useAlgoDidActions = () => {
         authentication: [`${did}#master`],
 
         // Add custom metadata like the username or email
-        service: [
-          {
-            id: `${did}#username`,
-            type: 'UserProfile',
-            serviceEndpoint: { username: 'alice' },
-          },
-          {
-            id: `${did}#email`,
-            type: 'UserEmail',
-            serviceEndpoint: { email: 'alice@gmail.org' },
-          },
-        ],
+        // service: [
+        //   {
+        //     id: `${did}#username`,
+        //     type: 'UserProfile',
+        //     serviceEndpoint: { username: 'alice' },
+        //   },
+        //   {
+        //     id: `${did}#email`,
+        //     type: 'UserEmail',
+        //     serviceEndpoint: { email: 'alice@gmail.org' },
+        //   },
+        // ],
       };
 
       return didDocument;
@@ -551,7 +554,7 @@ export const useAlgoDidActions = () => {
       const address = algosdk.encodeAddress(publicKey);
 
       if (config.algod.network !== network) {
-        throw new Error(`Invalid network. Expected ${config.algod.network}, got ${network}`);
+        throw new Error(`Invalid DID network. Expected ${config.algod.network}, got ${network}`);
       }
 
       const res = await algokit.getAppById(Number(appId), algodClient);
@@ -560,10 +563,92 @@ export const useAlgoDidActions = () => {
         const creatorKey = algosdk.decodeAddress(res.params.creator).publicKey;
         const creatorKeyHex = Buffer.from(creatorKey).toString('hex');
 
-        throw new Error(`Invalid public key. Expected ${creatorKeyHex}, got ${publicKeyHex}`);
+        throw new Error(`Invalid DID public key. Expected ${creatorKeyHex}, got ${publicKeyHex}`);
       }
 
       return resolveDidByAppId(String(appId), address);
+    },
+    [activeAddress, signer],
+  );
+
+  const resolveDidUsingExternalApi = async (did: string) => {
+    const response = await client.get(
+      `https://dev.uniresolver.io/1.0/identifiers/${encodeURIComponent(did)}`,
+      undefined,
+      { overrideDefaultBaseUrl: true },
+    );
+
+    if (response.data) {
+      return response.data as DidDocument;
+    }
+
+    throw new Error(response.error);
+  };
+
+  const verifyOwnershipOfDid = useCallback(
+    async (did: string) => {
+      if (!activeAddress || !signer) {
+        throw new Error('No wallet connected');
+      }
+
+      const sender = { signer, addr: activeAddress };
+      const didDocument = await resolveDid(did);
+      const { publicKey: didPublicHex } = resolveDidIntoComponents(didDocument.id);
+
+      // Encode note for auth txn
+      const encoder = new TextEncoder();
+      const dataToSign = `text to decode - ${Date.now()}`;
+      const encodedData = encoder.encode(dataToSign);
+
+      // create txn
+      const suggestedParams = await algodClient.getTransactionParams().do();
+      const authTxn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+        from: sender.addr,
+        to: sender.addr,
+        amount: 0,
+        suggestedParams: {
+          ...suggestedParams,
+          fee: 0,
+          flatFee: true,
+        },
+        note: encodedData,
+      });
+
+      // encode and sign auth txn
+      const encodedTx = authTxn.toByte();
+      const signedTxn = (await signTransactions([encodedTx], [0]))[0];
+
+      // Signed txn can be converted to base64 and sent to a backend for validation
+      // refer to commented code
+      const signedTxnBase64 = Buffer.from(signedTxn).toString('base64'); // signed txn to base64
+      const newRes = new Uint8Array(Buffer.from(signedTxnBase64, 'base64'));
+      const decodedSingedTxnFrombase64 = algosdk.decodeSignedTransaction(Buffer.from(newRes));
+
+      // decode signed txn
+      const decodedSignedTxn = algosdk.decodeSignedTransaction(Buffer.from(signedTxn));
+
+      // algo sdk verification
+      const from = algosdk.encodeAddress(decodedSignedTxn.txn!.from.publicKey);
+      const to = algosdk.encodeAddress(decodedSignedTxn.txn!.to.publicKey);
+      const noteFromTxn = new TextDecoder().decode(decodedSignedTxn.txn!.note);
+
+      if (from !== to) {
+        throw new Error(
+          'Signed transaction sender and receiver does not match the provided auth transaction',
+        );
+      }
+
+      if (noteFromTxn !== dataToSign) {
+        throw new Error('Signed transaction note does not match the provided auth transaction');
+      }
+
+      const isValid = await nobleEd25519.verifyAsync(
+        decodedSignedTxn.sig!,
+        decodedSignedTxn.txn!.bytesToSign(),
+        new Uint8Array(Buffer.from(didPublicHex, 'hex')),
+      );
+
+      return isValid;
     },
     [activeAddress, signer],
   );
@@ -579,5 +664,7 @@ export const useAlgoDidActions = () => {
     deleteDocument,
     resolveDidByAppId,
     resolveDid,
+    verifyOwnershipOfDid,
+    resolveDidUsingExternalApi,
   };
 };

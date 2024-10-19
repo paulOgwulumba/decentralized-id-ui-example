@@ -19,7 +19,7 @@ export interface DidDocument {
     controller: string;
   }[];
   authentication: string[];
-  service: {
+  service?: {
     id: string;
     type: string;
     serviceEndpoint: Record<string, string>;

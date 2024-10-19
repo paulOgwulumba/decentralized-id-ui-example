@@ -27,31 +27,33 @@ export const CreateDidModal = ({ onClose }: Props) => {
     let didMetaData: DidMetadata | undefined = undefined;
 
     try {
-        toast.loading('Checking for document upload status...', { id: 'loader' });
-        didMetaData = await getDidMetaData(appId);
-        toast.dismiss('loader');
+      toast.loading('Checking for document upload status...', { id: 'loader' });
+      didMetaData = await getDidMetaData(appId);
+      toast.dismiss('loader');
     } catch (error) {
-        console.error(error);
+      console.error(error);
     }
 
     const doc = await createDidDocument({ appId });
 
     if (!didMetaData) {
-        try {
-            toast.loading('Preparing for document upload...', { id: 'loader' });
-            await startDidDocumentUpload({ appId, document: doc });
-        } catch (error) {
-            console.error(error);
-            toast.dismiss('loader');
-            toast.error(`Failed to start document upload: ${error}`);
-            return;
-        }
+      try {
+        toast.loading('Preparing for document upload...', { id: 'loader' });
+        await startDidDocumentUpload({ appId, document: doc });
+      } catch (error) {
+        console.error(error);
+        toast.dismiss('loader');
+        toast.error(`Failed to start document upload: ${error}`);
+        return;
+      }
     }
 
     if (didMetaData?.status === AlgoDIDStatus.DELETING) {
-        toast.dismiss('loader');
-        toast.error('Cannot upload document at this time because it is currently undergoing a delete operation.');
-        return;
+      toast.dismiss('loader');
+      toast.error(
+        'Cannot upload document at this time because it is currently undergoing a delete operation.',
+      );
+      return;
     }
 
     try {
